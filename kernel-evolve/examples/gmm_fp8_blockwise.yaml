@@ -27,7 +27,7 @@ correctness:
 evaluator:
   namespace: "default"
   job_template: ".github/ci/kernel-eval-gmm-job.yaml"
-  repo: "primatrix/Glaucis"
+  repo: "pengchengneo/Glaucis"
   branch: "pallas-evolve/gmm-fp8-prod-shapes"
   poll_interval: 15
   timeout: 1200
