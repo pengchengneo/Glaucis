@@ -6,12 +6,16 @@ kernel:
     start: "# EVOLVE-BLOCK-START"
     end: "# EVOLVE-BLOCK-END"
 
-# AL model per-EP-shard dimensions:
-#   Gate/Up: lhs [8192, 2048] @ rhs [32, 2048, 512]
-#   Down:    lhs [8192, 512]  @ rhs [32, 512, 2048]
+# AL model production shapes (64 chip v7x, EP=1):
+#   global_batch=5120, GA=4, seq_len=4096, top_k=8, num_experts=256
+#   M = (5120/4) * 4096 * 8 / 128 = 327,680
+#   G = 256/EP = 256, per_expert = 1,280
+#   wi: fuse_gate_up=true → N=2*512=1024
+#   Gate/Up: lhs [327680, 2048] @ rhs [256, 2048, 1024]
+#   Down:    lhs [327680, 512]  @ rhs [256, 512, 2048]
 shapes:
-  - { M: 8192, K: 2048, N: 512, G: 32 }   # Gate/Up projection
-  - { M: 8192, K: 512, N: 2048, G: 32 }   # Down projection
+  - { M: 327680, K: 2048, N: 1024, G: 256 }  # wi (Gate/Up fused)
+  - { M: 327680, K: 512, N: 2048, G: 256 }    # wo (Down)
 
 correctness:
   method: "allclose"
@@ -23,10 +27,10 @@ correctness:
 evaluator:
   namespace: "default"
   job_template: ".github/ci/kernel-eval-gmm-job.yaml"
-  repo: "sii-xinglong/Glaucis"
-  branch: "main"
+  repo: "primatrix/Glaucis"
+  branch: "pallas-evolve/gmm-fp8-prod-shapes"
   poll_interval: 15
-  timeout: 600
+  timeout: 1200
 
 tpu:
   cluster: "tpu7x-cluster"
