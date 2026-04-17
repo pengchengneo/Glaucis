@@ -118,10 +118,13 @@ def run_one_problem(
     LOG_DIR.mkdir(exist_ok=True)
     log_path = LOG_DIR / f"{tag}.log"
 
+    plugin_dir = str(REPO_ROOT / "kernel-evolve" / "plugins" / "pallas-evolve")
     cmd = [
         claude_bin, "-p", prompt,
         "--output-format", "stream-json",
         "--verbose",
+        "--bare",
+        "--plugin-dir", plugin_dir,
         "--max-budget-usd", str(max_budget),
         "--append-system-prompt", SYSTEM_PROMPT_ADDENDUM,
         "--permission-mode", "bypassPermissions",
