@@ -863,10 +863,11 @@ def stage_profile_deep(exec_globals, shapes, dump_dir=None):
       flops / hbm_bytes if flops and hbm_bytes else None
     )
 
-    # VMEM utilization: vmem_bytes vs 32 MiB physical capacity (TPU v6e)
+    # VMEM utilization: vmem_bytes vs physical capacity
+    # TPU v5e: 128 MiB, v6e: not publicly documented, assume same as v5e
     vmem_utilization_pct = None
     if vmem_allocation is not None and vmem_allocation["vmem_bytes"] > 0:
-      vmem_capacity_bytes = 32 * 1024 * 1024  # 32 MiB per chip
+      vmem_capacity_bytes = int(os.environ.get("VMEM_CAPACITY_BYTES", 128 * 1024 * 1024))  # 128 MiB default
       vmem_utilization_pct = vmem_allocation["vmem_bytes"] / vmem_capacity_bytes * 100.0
 
     return {
