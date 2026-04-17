@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Orchestrate Glaucis optimization for pallas-kernel-bench L1 problems.
 
-Spawns one Claude Code session per problem in parallel, tracks progress,
-and supports resume.
+Spawns one Claude Code session per problem, tracks progress, and supports resume.
+Each session's stdout/stderr streams in real-time to bench_logs/bench_NNN.log.
 
 Usage:
     python kernel-evolve/scripts/bench_orchestrate.py --parallel 3 --problems 1-100
-    python kernel-evolve/scripts/bench_orchestrate.py --parallel 3 --problems 1,19,40 --resume
+    python kernel-evolve/scripts/bench_orchestrate.py --problems 1,19,40 --resume
+    # Monitor live:  tail -f bench_logs/bench_019.log
 """
 
 import argparse
@@ -15,14 +16,15 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Directory containing this script
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 PROGRESS_FILE = REPO_ROOT / "bench_progress.json"
+LOG_DIR = REPO_ROOT / "bench_logs"
 
 SYSTEM_PROMPT_ADDENDUM = """\
 You are running an automated benchmark evaluation. Key rules:
@@ -36,7 +38,6 @@ You are running an automated benchmark evaluation. Key rules:
 
 
 def build_prompt(problem_id: int, max_iterations: int) -> str:
-    """Build the prompt for a single problem's Claude session."""
     return f"""\
 Run a Glaucis kernel optimization session for pallas-kernel-bench L1 problem {problem_id}.
 
@@ -58,7 +59,6 @@ IMPORTANT INSTRUCTIONS:
 
 
 def parse_problem_range(spec: str) -> list[int]:
-    """Parse a problem spec like '1-100' or '1,19,40' into a list of IDs."""
     result = []
     for part in spec.split(","):
         part = part.strip()
@@ -71,14 +71,12 @@ def parse_problem_range(spec: str) -> list[int]:
 
 
 def load_progress() -> dict:
-    """Load progress from disk."""
     if PROGRESS_FILE.exists():
         return json.loads(PROGRESS_FILE.read_text())
     return {"meta": {}, "problems": {}}
 
 
 def save_progress(progress: dict) -> None:
-    """Save progress to disk (atomic write)."""
     tmp = PROGRESS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(progress, indent=2))
     tmp.rename(PROGRESS_FILE)
@@ -92,15 +90,17 @@ def run_one_problem(
     model: str = "sonnet",
     dry_run: bool = False,
 ) -> dict:
-    """Run a single problem through Glaucis optimization."""
-    worktree_name = f"bench-{problem_id:03d}"
+    """Run a single problem through Glaucis optimization.
+
+    Streams stdout/stderr to bench_logs/bench_NNN.log in real-time.
+    """
     prompt = build_prompt(problem_id, max_iterations)
     start_time = datetime.now(timezone.utc).isoformat()
+    tag = f"bench_{problem_id:03d}"
 
     status = {
         "problem_id": problem_id,
         "state": "running",
-        "worktree": worktree_name,
         "iterations": 0,
         "best_speedup": 0.0,
         "correct_variants": 0,
@@ -111,52 +111,40 @@ def run_one_problem(
     }
 
     if dry_run:
-        print(f"  [DRY-RUN] Problem {problem_id}: would run claude -p ... -w {worktree_name}")
+        print(f"  [DRY-RUN] Problem {problem_id}: would run claude -p ...")
         status["state"] = "skipped"
         return status
 
+    LOG_DIR.mkdir(exist_ok=True)
+    log_path = LOG_DIR / f"{tag}.log"
+
     cmd = [
         claude_bin, "-p", prompt,
-        "--output-format", "json",
         "--max-budget-usd", str(max_budget),
         "--append-system-prompt", SYSTEM_PROMPT_ADDENDUM,
         "--permission-mode", "bypassPermissions",
         "--model", model,
     ]
 
-    # Create log directory for this problem
-    log_dir = REPO_ROOT / "bench_logs"
-    log_dir.mkdir(exist_ok=True)
-
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=7200,  # 2 hour timeout per problem
-            cwd=str(REPO_ROOT),
-        )
+        with open(log_path, "w") as log_file:
+            log_file.write(f"=== Problem {problem_id} started at {start_time} ===\n")
+            log_file.write(f"=== cmd: {' '.join(cmd[:6])} ... ===\n\n")
+            log_file.flush()
 
-        # Save stdout/stderr for debugging
-        stdout_log = log_dir / f"bench_{problem_id:03d}_stdout.txt"
-        stderr_log = log_dir / f"bench_{problem_id:03d}_stderr.txt"
-        if result.stdout:
-            stdout_log.write_text(result.stdout)
-        if result.stderr:
-            stderr_log.write_text(result.stderr)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(REPO_ROOT),
+            )
 
-        # Try to parse BENCH_RESULT from output (may be in JSON result field)
-        output = result.stdout or ""
+            returncode = proc.wait(timeout=7200)
 
-        # If output is JSON (--output-format json), extract the result text
-        try:
-            json_output = json.loads(output)
-            if isinstance(json_output, dict) and "result" in json_output:
-                output = json_output["result"]
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-        for line in output.splitlines():
+        # Parse log for BENCH_RESULT
+        log_content = log_path.read_text()
+        for line in log_content.splitlines():
             if line.startswith("BENCH_RESULT:"):
                 try:
                     bench_data = json.loads(line[len("BENCH_RESULT:"):])
@@ -167,15 +155,14 @@ def run_one_problem(
                 except json.JSONDecodeError:
                     pass
 
-        if result.returncode == 0:
+        if returncode == 0:
             status["state"] = "completed"
         else:
             status["state"] = "failed"
-            status["error"] = f"Exit code {result.returncode}"
-            if result.stderr:
-                status["error"] += f": {result.stderr[:500]}"
+            status["error"] = f"Exit code {returncode}"
 
     except subprocess.TimeoutExpired:
+        proc.kill()
         status["state"] = "failed"
         status["error"] = "Timeout (2 hours)"
     except Exception as e:
@@ -183,6 +170,15 @@ def run_one_problem(
         status["error"] = str(e)[:500]
 
     status["end_time"] = datetime.now(timezone.utc).isoformat()
+
+    # Append summary to log
+    try:
+        with open(log_path, "a") as f:
+            f.write(f"\n=== Problem {problem_id} finished: {status['state']} ===\n")
+            f.write(f"=== speedup={status['best_speedup']}, iters={status['iterations']} ===\n")
+    except Exception:
+        pass
+
     return status
 
 
@@ -195,8 +191,8 @@ def main():
         help="Problem IDs: '1-100', '1,19,40', or '1-10,50-60' (default: 1-100)",
     )
     parser.add_argument(
-        "--parallel", type=int, default=3,
-        help="Max concurrent Claude sessions (default: 3)",
+        "--parallel", type=int, default=1,
+        help="Max concurrent Claude sessions (default: 1)",
     )
     parser.add_argument(
         "--max-iterations", type=int, default=5,
@@ -227,16 +223,15 @@ def main():
     target_ids = parse_problem_range(args.problems)
     progress = load_progress() if args.resume else {"meta": {}, "problems": {}}
 
-    # Update metadata
     progress["meta"] = {
         "started": datetime.now(timezone.utc).isoformat(),
         "parallel": args.parallel,
         "max_iterations": args.max_iterations,
         "max_budget": args.max_budget,
+        "model": args.model,
         "target_problems": len(target_ids),
     }
 
-    # Determine pending problems
     if args.resume:
         completed = {
             int(pid)
@@ -253,8 +248,9 @@ def main():
         return
 
     print(f"Processing {len(pending)} problems with parallelism={args.parallel}")
-    print(f"Max iterations: {args.max_iterations}, Max budget: ${args.max_budget}/problem")
+    print(f"Max iterations: {args.max_iterations}, Max budget: ${args.max_budget}/problem, Model: {args.model}")
     print(f"Progress file: {PROGRESS_FILE}")
+    print(f"Logs: {LOG_DIR}/bench_NNN.log  (tail -f to monitor)")
     print(f"{'='*70}")
 
     completed_count = len(target_ids) - len(pending)
