@@ -51,6 +51,10 @@ spec:
           value: "true"
         - name: LIBTPU_INIT_ARGS
           value: "--xla_enable_custom_call_region_trace=true --xla_xprof_register_llo_debug_info=true"
+        - name: PEAK_FLOPS
+          value: "918e12"
+        - name: PEAK_HBM_BW
+          value: "1638e9"
         resources:
           limits:
             google.com/tpu: "4"
