@@ -117,7 +117,6 @@ def run_one_problem(
 
     cmd = [
         claude_bin, "-p", prompt,
-        "-w", worktree_name,
         "--output-format", "json",
         "--max-budget-usd", str(max_budget),
         "--append-system-prompt", SYSTEM_PROMPT_ADDENDUM,
