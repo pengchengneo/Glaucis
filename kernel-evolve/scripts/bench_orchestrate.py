@@ -27,13 +27,11 @@ PROGRESS_FILE = REPO_ROOT / "bench_progress.json"
 LOG_DIR = REPO_ROOT / "bench_logs"
 
 SYSTEM_PROMPT_ADDENDUM = """\
-You are running an automated benchmark evaluation. Key rules:
-- ALWAYS choose "Autonomous" mode when the start skill asks.
+You are running an automated benchmark. Rules:
+- Choose "Autonomous" mode when the start skill asks.
 - Do NOT run `gh issue create` or `gh issue comment`.
 - Do NOT ask user questions. Make all decisions autonomously.
-- If a round produces only COMPILE_ERROR results, try a fundamentally different approach next round.
-- Stop after the configured max_iterations or when all lineages stagnate for 2 rounds.
-- Save all artifacts. Every iteration's kernel variants must be persisted.
+- After completing the configured iterations, STOP and exit immediately. Do not reflect, plan next steps, or do any extra work.
 """
 
 
@@ -43,17 +41,14 @@ Run a Glaucis kernel optimization session for pallas-kernel-bench L1 problem {pr
 
 Config file: kernel-evolve/examples/bench_{problem_id:03d}.yaml
 
-IMPORTANT INSTRUCTIONS:
-1. First, read AGENT.md for accumulated optimization knowledge.
-2. Read the config file and the template/reference kernel files to understand the problem.
-3. The template's EVOLVE-BLOCK currently passes through to the original JAX Model class.
-   Your goal: evolve it into an efficient Pallas TPU kernel using pallas_call.
-4. Run /pallas-evolve:start bench_{problem_id:03d}.yaml
-   - Choose AUTONOMOUS mode (do not ask user)
-   - Maximum {max_iterations} iterations
-5. Do NOT create GitHub Issues or post GitHub comments.
-6. Save all artifacts. Every iteration's kernel variants must be persisted to disk.
-7. When done, report your final results as JSON on the last line:
+INSTRUCTIONS:
+1. Read the config file and the template/reference kernel files.
+2. Run /pallas-evolve:start bench_{problem_id:03d}.yaml
+   - Choose AUTONOMOUS mode
+   - Maximum {max_iterations} iteration(s)
+3. Do NOT create GitHub Issues or comments.
+4. After completing {max_iterations} iteration(s), STOP IMMEDIATELY. Do not do additional analysis or planning.
+5. Report results on the last line:
    BENCH_RESULT:{{"problem_id": {problem_id}, "iterations": N, "best_speedup": X.XX, "correct_variants": N, "total_variants": N}}
 """
 
@@ -298,10 +293,21 @@ def main():
             }.get(result.get("state", "?"), "?")
 
             speedup_str = f"{result.get('best_speedup', 0):.2f}x" if result.get("best_speedup") else "N/A"
+
+            # Compute elapsed time
+            elapsed_str = "N/A"
+            if result.get("start_time") and result.get("end_time"):
+                start_dt = datetime.fromisoformat(result["start_time"])
+                end_dt = datetime.fromisoformat(result["end_time"])
+                elapsed = (end_dt - start_dt).total_seconds()
+                minutes, secs = divmod(int(elapsed), 60)
+                elapsed_str = f"{minutes}m{secs:02d}s"
+
             print(
                 f"  [{completed_count:3d}/{total_count}] Problem {pid:3d}: "
                 f"{state_icon:4s}  speedup={speedup_str}  "
-                f"iters={result.get('iterations', 0)}"
+                f"iters={result.get('iterations', 0)}  "
+                f"time={elapsed_str}"
             )
 
     # Print summary
