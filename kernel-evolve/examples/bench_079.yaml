@@ -1,0 +1,37 @@
+# Auto-generated Glaucis config for L1 problem 79: conv_transposed_1D_asymmetric_input_square_kernel___padded____strided____dilated__
+kernel:
+  name: "bench_079"
+  template: "kernels/bench_079.py"
+  reference: "kernels/bench_079_ref.py"
+  evolve_markers:
+    start: "# EVOLVE-BLOCK-START"
+    end: "# EVOLVE-BLOCK-END"
+
+shapes:
+  - { _id: 79 }
+
+correctness:
+  method: "allclose"
+  rtol: 1e-2
+  atol: 1e-2
+
+evaluator:
+  namespace: "default"
+  job_template: ".github/ci/kernel-eval-job.yaml"
+  repo: "sii-xinglong/Glaucis"
+  branch: "bench-l1"
+  poll_interval: 15
+  timeout: 600
+
+tpu:
+  cluster: "tpu7x-cluster"
+  zone: "us-central1"
+
+batch:
+  variants_per_round: 3
+  top_k: 1
+  max_active_lineages: 2
+
+session:
+  max_iterations: 5
+  output_dir: "runs/bench_079"
