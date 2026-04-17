@@ -72,6 +72,6 @@ spec:
         configMap:
           name: ${JOB_NAME}-payload
       nodeSelector:
-        cloud.google.com/gke-tpu-accelerator: tpu7x
-        cloud.google.com/gke-tpu-topology: 2x2x1
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+        cloud.google.com/gke-tpu-topology: 2x2
       restartPolicy: Never
