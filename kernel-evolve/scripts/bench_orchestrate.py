@@ -89,6 +89,7 @@ def run_one_problem(
     max_iterations: int = 5,
     max_budget: float = 5.0,
     claude_bin: str = "claude",
+    model: str = "sonnet",
     dry_run: bool = False,
 ) -> dict:
     """Run a single problem through Glaucis optimization."""
@@ -121,6 +122,7 @@ def run_one_problem(
         "--max-budget-usd", str(max_budget),
         "--append-system-prompt", SYSTEM_PROMPT_ADDENDUM,
         "--permission-mode", "bypassPermissions",
+        "--model", model,
     ]
 
     # Create log directory for this problem
@@ -217,6 +219,10 @@ def main():
         "--claude-bin", type=str, default="claude",
         help="Path to claude CLI binary (default: claude)",
     )
+    parser.add_argument(
+        "--model", type=str, default="sonnet",
+        help="Claude model to use (default: sonnet)",
+    )
     args = parser.parse_args()
 
     target_ids = parse_problem_range(args.problems)
@@ -264,6 +270,7 @@ def main():
                 max_iterations=args.max_iterations,
                 max_budget=args.max_budget,
                 claude_bin=args.claude_bin,
+                model=args.model,
                 dry_run=args.dry_run,
             )
             future_to_pid[future] = pid
