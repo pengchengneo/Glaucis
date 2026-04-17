@@ -121,6 +121,7 @@ def run_one_problem(
     cmd = [
         claude_bin, "-p", prompt,
         "--output-format", "stream-json",
+        "--verbose",
         "--max-budget-usd", str(max_budget),
         "--append-system-prompt", SYSTEM_PROMPT_ADDENDUM,
         "--permission-mode", "bypassPermissions",
