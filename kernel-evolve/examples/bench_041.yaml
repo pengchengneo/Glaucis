@@ -19,7 +19,7 @@ evaluator:
   namespace: "default"
   job_template: ".github/ci/kernel-eval-job.yaml"
   repo: "sii-xinglong/Glaucis"
-  branch: "bench-l1"
+  branch: "main"
   poll_interval: 15
   timeout: 600
 
