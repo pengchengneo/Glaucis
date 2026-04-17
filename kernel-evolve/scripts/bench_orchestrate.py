@@ -123,6 +123,10 @@ def run_one_problem(
         "--permission-mode", "bypassPermissions",
     ]
 
+    # Create log directory for this problem
+    log_dir = REPO_ROOT / "bench_logs"
+    log_dir.mkdir(exist_ok=True)
+
     try:
         result = subprocess.run(
             cmd,
@@ -132,8 +136,25 @@ def run_one_problem(
             cwd=str(REPO_ROOT),
         )
 
-        # Try to parse BENCH_RESULT from output
+        # Save stdout/stderr for debugging
+        stdout_log = log_dir / f"bench_{problem_id:03d}_stdout.txt"
+        stderr_log = log_dir / f"bench_{problem_id:03d}_stderr.txt"
+        if result.stdout:
+            stdout_log.write_text(result.stdout)
+        if result.stderr:
+            stderr_log.write_text(result.stderr)
+
+        # Try to parse BENCH_RESULT from output (may be in JSON result field)
         output = result.stdout or ""
+
+        # If output is JSON (--output-format json), extract the result text
+        try:
+            json_output = json.loads(output)
+            if isinstance(json_output, dict) and "result" in json_output:
+                output = json_output["result"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
         for line in output.splitlines():
             if line.startswith("BENCH_RESULT:"):
                 try:
